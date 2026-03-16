@@ -1,29 +1,44 @@
 const net = require("net");
 
-// Create a TCP server
 const server = net.createServer((socket) => {
-  console.log("✅ New client connected");
+  console.log("✅ Client connected");
 
-  // When data is received from the client
+  let buffer = "";
+
   socket.on("data", (data) => {
-    console.log("📩 Received:", data.toString());
+    buffer += data.toString();
 
-    // Send data back to client
-    socket.write("Hello from TCP server!\n");
+    // Split messages by newline
+    let messages = buffer.split("\n");
+
+    // Keep last partial message in buffer
+    buffer = messages.pop();
+
+    for (const message of messages) {
+      handleMessage(message.trim(), socket);
+    }
   });
 
-  // When client disconnects
   socket.on("end", () => {
     console.log("❌ Client disconnected");
   });
 
-  // Handle errors
   socket.on("error", (err) => {
     console.error("Socket error:", err.message);
   });
 });
 
-// Start listening
+function handleMessage(message, socket) {
+  if (message === "PING") {
+    socket.write("PONG\n");
+  } else if (message.startsWith("ECHO ")) {
+    const text = message.slice(5);
+    socket.write(text + "\n");
+  } else {
+    socket.write("ERROR Unknown command\n");
+  }
+}
+
 server.listen(3000, () => {
   console.log("🚀 TCP server listening on port 3000");
 });
