@@ -4,7 +4,6 @@ const clients = new Set();
 const MAX_CLIENTS = 100;
 
 const server = net.createServer((socket) => {
-  // Limit connections
   if (clients.size >= MAX_CLIENTS) {
     socket.write("ERROR Server full\n");
     socket.end();
@@ -18,13 +17,11 @@ const server = net.createServer((socket) => {
 
   clients.add(socket);
 
-  // Handle incoming data (ROBUST BUFFERING)
   socket.on("data", (data) => {
     buffer += data.toString();
 
     let boundary;
 
-    // Process complete messages
     while ((boundary = buffer.indexOf("\n")) !== -1) {
       const message = buffer.slice(0, boundary).trim();
       buffer = buffer.slice(boundary + 1);
@@ -34,39 +31,35 @@ const server = net.createServer((socket) => {
       }
     }
 
-    // Prevent memory overflow
     if (buffer.length > 1024) {
       socket.write("ERROR Message too long\n");
       buffer = "";
     }
   });
 
-  // Graceful disconnect
   socket.on("end", () => {
     console.log("❌ Client disconnected");
     clients.delete(socket);
     broadcast(`${socket.name} left the chat\n`, socket);
   });
 
-  // Always triggered (important)
   socket.on("close", () => {
     clients.delete(socket);
   });
 
-  // Error handling
   socket.on("error", (err) => {
     console.error("Socket error:", err.message);
     clients.delete(socket);
   });
 });
 
-// Handle commands
 function handleMessage(message, socket) {
   if (message.length > 256) {
     socket.write("ERROR Message too long\n");
     return;
   }
 
+  // NAME
   if (message.startsWith("NAME ")) {
     const name = message.slice(5).trim();
 
@@ -79,6 +72,7 @@ function handleMessage(message, socket) {
     socket.write(`Welcome, ${name}!\n`);
   }
 
+  // MSG (broadcast)
   else if (message.startsWith("MSG ")) {
     const text = message.slice(4).trim();
 
@@ -90,6 +84,36 @@ function handleMessage(message, socket) {
     broadcast(`${socket.name}: ${text}\n`, socket);
   }
 
+  // DM (private message)
+  else if (message.startsWith("DM ")) {
+    const parts = message.split(" ");
+
+    if (parts.length < 3) {
+      socket.write("ERROR Invalid DM format\n");
+      return;
+    }
+
+    const targetName = parts[1];
+    const text = parts.slice(2).join(" ");
+
+    const targetClient = findClientByName(targetName);
+
+    if (!targetClient) {
+      socket.write(`ERROR User ${targetName} not found\n`);
+      return;
+    }
+
+    targetClient.write(`[DM from ${socket.name}]: ${text}\n`);
+    socket.write(`[DM to ${targetName}]: ${text}\n`);
+  }
+
+  // LIST users
+  else if (message === "LIST") {
+    const names = [...clients].map(c => c.name);
+    socket.write("Users: " + names.join(", ") + "\n");
+  }
+
+  // PING
   else if (message === "PING") {
     socket.write("PONG\n");
   }
@@ -99,7 +123,6 @@ function handleMessage(message, socket) {
   }
 }
 
-// Broadcast with backpressure handling
 function broadcast(message, sender) {
   for (const client of clients) {
     if (client !== sender) {
@@ -114,6 +137,16 @@ function broadcast(message, sender) {
       }
     }
   }
+}
+
+// Helper: find user by name
+function findClientByName(name) {
+  for (const client of clients) {
+    if (client.name === name) {
+      return client;
+    }
+  }
+  return null;
 }
 
 server.listen(3000, () => {
